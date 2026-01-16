@@ -32,6 +32,10 @@ $settings_form_list = (new CFormList())
 	->addRow(_('Cache TTL (seconds)'),
 		(new CNumericBox('cache_ttl', $data['cache_ttl'], 5))
 			->setWidth(ZBX_TEXTAREA_NUMERIC_STANDARD_WIDTH)
+	)
+	->addRow(_('Local server name'),
+		(new CTextBox('local_server_name', $data['local_server_name']))
+			->setWidth(ZBX_TEXTAREA_STANDARD_WIDTH)
 	);
 
 $settings_form->addItem($settings_form_list);
@@ -56,11 +60,17 @@ foreach ($data['servers'] as $server) {
 		->addVar('delete_id', $server['id'])
 		->addItem((new CSubmitButton(_('Delete')))->addClass(ZBX_STYLE_BTN_ALT));
 
+	$reset_form = (new CForm('post'))
+		->addVar('action', $data['action'])
+		->addVar('reset_cache_id', $server['id'])
+		->addItem((new CSubmitButton(_('Reset cache')))->addClass(ZBX_STYLE_BTN_ALT));
+
 	$actions = [
 		(new CLink(_('Edit'), (new CUrl('zabbix.php'))
 			->setArgument('action', 'ticket.platform.settings.edit')
 			->setArgument('server_id', $server['id'])
 		)),
+		$reset_form,
 		$delete_form
 	];
 

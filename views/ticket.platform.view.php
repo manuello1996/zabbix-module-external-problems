@@ -68,6 +68,10 @@ $left_column = (new CFormList())
 		(new CTextBox('name', $filter['name']))
 			->setWidth(ZBX_TEXTAREA_FILTER_STANDARD_WIDTH)
 	)
+	->addRow(_('Host'),
+		(new CTextBox('host', $filter['host']))
+			->setWidth(ZBX_TEXTAREA_FILTER_STANDARD_WIDTH)
+	)
 	->addRow(_('Severity'),
 		(new CCheckBoxList('severities'))
 			->setOptions($severity_options)
@@ -149,6 +153,7 @@ $url = (new CUrl('zabbix.php'))
 	->setArgument('action', $data['action'])
 	->setArgument('show', $filter['show'])
 	->setArgument('name', $filter['name'])
+	->setArgument('host', $filter['host'])
 	->setArgument('sort', $filter['sort'])
 	->setArgument('sortorder', $filter['sortorder']);
 
@@ -174,12 +179,16 @@ if ($filter['tags']) {
 $url->setArgument('from', $filter['from']);
 $url->setArgument('to', $filter['to']);
 
-if ($problems) {
-	usort($problems, function ($a, $b) use ($filter) {
-		switch ($filter['sort']) {
+	if ($problems) {
+		usort($problems, function ($a, $b) use ($filter) {
+			switch ($filter['sort']) {
 			case 'host':
-				$left = implode(', ', $a['hosts']);
-				$right = implode(', ', $b['hosts']);
+				$left = implode(', ', array_map(function ($host) {
+					return $host['name'];
+				}, $a['hosts']));
+				$right = implode(', ', array_map(function ($host) {
+					return $host['name'];
+				}, $b['hosts']));
 				break;
 			case 'severity':
 				$left = $a['severity'];
@@ -259,7 +268,57 @@ foreach ($problems as $problem) {
 		$problem['r_eventid'] ? ZBX_STYLE_GREEN : ZBX_STYLE_RED
 	);
 
-	$host_list = $problem['hosts'] ? implode(', ', $problem['hosts']) : '';
+	$host_list = '';
+	if ($problem['hosts']) {
+		$host_links = [];
+		foreach ($problem['hosts'] as $host) {
+			if ($problem['server_id'] === 'local') {
+				$host_links[] = (new CLinkAction($host['name']))
+					->setMenuPopup(CMenuPopupHelper::getHost($host['hostid']));
+				continue;
+			}
+
+			$host_problems_url = (new CUrl('zabbix.php'))
+				->setArgument('action', 'ticket.platform')
+				->setArgument('show', $filter['show'])
+				->setArgument('server_ids[]', $problem['server_id'])
+				->setArgument('host', $host['name'])
+				->setArgument('filter_set', 1)
+				->getUrl();
+			$host_popup = 'javascript:ticketPlatformRemoteHostPopUp("'.$host['hostid'].'","'
+				.$problem['server_id'].'");';
+
+			$host_links[] = (new CLinkAction($host['name']))
+				->setMenuPopup([
+					'type' => 'submenu',
+					'data' => [
+						'submenu' => [
+							'view' => [
+								'label' => _('View'),
+								'items' => [
+									$host_problems_url => _('Problems')
+								]
+							],
+							'configuration' => [
+								'label' => _('Configuration'),
+								'items' => [
+									$host_popup => _('Host')
+								]
+							]
+						]
+					]
+				]);
+		}
+
+		$host_items = [];
+		foreach ($host_links as $index => $link) {
+			if ($index > 0) {
+				$host_items[] = ', ';
+			}
+			$host_items[] = $link;
+		}
+		$host_list = new CSpan($host_items);
+	}
 
 	$update_link = (new CLink(_('Update')))
 		->setAttribute('data-eventid', $problem['eventid'])
@@ -289,13 +348,42 @@ foreach ($problems as $problem) {
 		}
 	}
 
+	$problem_cell = $problem['name'];
+	if (!empty($problem['objectid'])) {
+		$problems_url = (new CUrl('zabbix.php'))
+			->setArgument('action', 'ticket.platform')
+			->setArgument('show', $filter['show'])
+			->setArgument('server_ids[]', $problem['server_id'])
+			->setArgument('name', $problem['name'])
+			->setArgument('filter_set', 1)
+			->getUrl();
+		$trigger_popup = 'javascript:ticketPlatformTriggerPopUp("'.$problem['objectid'].'","'
+			.$problem['server_id'].'");';
+
+		$problem_cell = (new CLinkAction($problem['name']))
+			->addClass(ZBX_STYLE_WORDBREAK)
+			->setMenuPopup([
+				'type' => 'submenu',
+				'data' => [
+					'submenu' => [
+						'main_section' => [
+							'items' => [
+								$problems_url => _('Problems'),
+								$trigger_popup => _('Trigger')
+							]
+						]
+					]
+				]
+			]);
+	}
+
 	$row = [
 		$time_text,
 		CSeverityHelper::makeSeverityCell($problem['severity']),
 		$status,
 		$problem['server_name'],
 		$host_list,
-		$problem['name'],
+		$problem_cell,
 		zbx_date2age($problem['clock']),
 		$acknowledged,
 		$update_link,
@@ -322,14 +410,6 @@ if ($data['errors']) {
 	$page->addItem(makeMessageBox(ZBX_STYLE_MSG_WARNING, $error_messages, null, true));
 }
 
-if (array_key_exists('debug', $data) && $data['debug']) {
-	$debug_messages = [];
-	foreach ($data['debug'] as $message) {
-		$debug_messages[] = ['message' => $message];
-	}
-	$page->addItem(makeMessageBox(ZBX_STYLE_MSG_WARNING, $debug_messages, _('Ticket Platform debug'), true));
-}
-
 $page
 	->addItem($problems_table)
 	->show();
@@ -341,8 +421,26 @@ $page
 		);
 	};
 
+	window.ticketPlatformTriggerPopUp = function(triggerid, serverid, trigger_element) {
+		return PopUp("ticket.platform.trigger.popup",
+			{triggerid: triggerid, server_id: serverid},
+			{dialogue_class: "modal-popup-generic", trigger_element: trigger_element}
+		);
+	};
+
+	window.ticketPlatformRemoteHostPopUp = function(hostid, serverid, trigger_element) {
+		return PopUp("ticket.platform.host.popup",
+			{hostid: hostid, server_id: serverid},
+			{dialogueid: "host_edit", dialogue_class: "modal-popup-large", trigger_element: trigger_element}
+		);
+	};
+
 	if (typeof $.subscribe === "function") {
 		$.subscribe("acknowledge.create", function() {
+			location.reload();
+		});
+
+		$.subscribe("ticketplatform.host.update", function() {
 			location.reload();
 		});
 
@@ -375,4 +473,23 @@ $page
 			}
 		});
 	}
+
+	window.view = window.view || {};
+	window.view.editHost = function(hostid) {
+		clearMessages();
+
+		var original_url = location.href;
+		var overlay = PopUp("popup.host.edit", {hostid: hostid}, {
+			dialogueid: "host_edit",
+			dialogue_class: "modal-popup-large",
+			prevent_navigation: true
+		});
+
+		overlay.$dialogue[0].addEventListener("dialogue.submit", function() {
+			location.reload();
+		}, {once: true});
+		overlay.$dialogue[0].addEventListener("dialogue.close", function() {
+			history.replaceState({}, "", original_url);
+		}, {once: true});
+	};
 '))->show();

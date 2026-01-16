@@ -26,6 +26,7 @@ use CControllerResponseData;
 use CControllerResponseRedirect;
 use CUrl;
 use CWebUser;
+use Modules\TicketPlatform\Includes\Cache;
 use Modules\TicketPlatform\Includes\Config;
 
 class TicketPlatformSettings extends CController {
@@ -38,6 +39,8 @@ class TicketPlatformSettings extends CController {
 		$fields = [
 			'save_settings' => 'string',
 			'cache_ttl' => 'int32',
+			'local_server_name' => 'string',
+			'reset_cache_id' => 'string',
 			'delete_id' => 'string'
 		];
 
@@ -59,6 +62,8 @@ class TicketPlatformSettings extends CController {
 
 		if ($this->hasInput('save_settings')) {
 			$config['cache_ttl'] = max(5, (int) $this->getInput('cache_ttl', 60));
+			$local_name = trim($this->getInput('local_server_name', ''));
+			$config['local_server_name'] = $local_name !== '' ? $local_name : 'Local server';
 			Config::save($config);
 
 			$this->setResponse(new CControllerResponseRedirect(
@@ -81,9 +86,20 @@ class TicketPlatformSettings extends CController {
 			return;
 		}
 
+		if ($this->hasInput('reset_cache_id')) {
+			$reset_id = $this->getInput('reset_cache_id');
+			Cache::clearServer($reset_id);
+
+			$this->setResponse(new CControllerResponseRedirect(
+				(new CUrl('zabbix.php'))->setArgument('action', $this->getAction())
+			));
+			return;
+		}
+
 		$response = new CControllerResponseData([
 			'action' => $this->getAction(),
 			'cache_ttl' => (int) $config['cache_ttl'],
+			'local_server_name' => $config['local_server_name'],
 			'servers' => $config['servers']
 		]);
 		$response->setTitle(_('Ticket Platform settings'));

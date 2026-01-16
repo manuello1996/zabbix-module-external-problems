@@ -24,7 +24,6 @@ namespace Modules\TicketPlatform\Includes;
 use Exception;
 
 class RemoteApi {
-	private static array $debug = [];
 
 	public static function call(string $url, string $token, string $method, array $params) {
 		try {
@@ -32,7 +31,6 @@ class RemoteApi {
 		}
 		catch (Exception $e) {
 			if ($token !== '' && stripos($e->getMessage(), 'not authorized') !== false) {
-				self::addDebug('Retry with legacy auth url='.$url.' method='.$method);
 				return self::request($url, $token, $method, $params, false);
 			}
 
@@ -42,23 +40,6 @@ class RemoteApi {
 
 	public static function callNoAuth(string $url, string $method, array $params) {
 		return self::request($url, '', $method, $params, true);
-	}
-
-	public static function getDebug(): array {
-		return self::$debug;
-	}
-
-	public static function clearDebug(): void {
-		self::$debug = [];
-	}
-
-	public static function debug(string $message): void {
-		self::addDebug($message);
-	}
-
-	private static function addDebug(string $message): void {
-		self::$debug[] = $message;
-		error_log('TicketPlatform RemoteApi '.$message);
 	}
 
 	private static function request(string $url, string $token, string $method, array $params, bool $use_bearer) {
@@ -94,8 +75,6 @@ class RemoteApi {
 
 			if ($response === false) {
 				$error = curl_error($handle);
-				self::addDebug('curl error url='.$url.' method='.$method.' auth='
-					.($use_bearer ? 'bearer' : 'legacy').': '.$error);
 				curl_close($handle);
 				throw new Exception($error);
 			}
@@ -114,8 +93,6 @@ class RemoteApi {
 
 			$response = file_get_contents($url, false, $context);
 			if ($response === false) {
-				self::addDebug('stream error url='.$url.' method='.$method.' auth='
-					.($use_bearer ? 'bearer' : 'legacy'));
 				throw new Exception('Remote API request failed.');
 			}
 		}
@@ -123,15 +100,11 @@ class RemoteApi {
 		$data = json_decode($response, true);
 
 		if (!is_array($data)) {
-			self::addDebug('invalid JSON url='.$url.' method='.$method.' auth='
-				.($use_bearer ? 'bearer' : 'legacy').' response='.substr($response, 0, 200));
 			throw new Exception('Invalid JSON-RPC response.');
 		}
 
 		if (array_key_exists('error', $data)) {
 			$message = $data['error']['data'] ?? $data['error']['message'] ?? 'Unknown API error.';
-			self::addDebug('error url='.$url.' method='.$method.' auth='
-				.($use_bearer ? 'bearer' : 'legacy').' message='.$message);
 			throw new Exception($message);
 		}
 

@@ -32,7 +32,6 @@ use CUrl;
 use CWebUser;
 use Modules\TicketPlatform\Includes\Config;
 use Modules\TicketPlatform\Includes\ProblemHelper;
-use Modules\TicketPlatform\Includes\RemoteApi;
 
 class TicketPlatform extends CController {
 
@@ -47,6 +46,7 @@ class TicketPlatform extends CController {
 			'show' => 'in '.TRIGGERS_OPTION_RECENT_PROBLEM.','.TRIGGERS_OPTION_IN_PROBLEM.','.TRIGGERS_OPTION_ALL,
 			'server_ids' => 'array',
 			'name' => 'string',
+			'host' => 'string',
 			'severities' => 'array',
 			'age_state' => 'in 0,1',
 			'age' => 'int32',
@@ -72,7 +72,7 @@ class TicketPlatform extends CController {
 
 	protected function doAction(): void {
 		$config = Config::get();
-		$servers = $config['servers'];
+		$servers = $this->addLocalServer($config['servers']);
 
 		if ($this->hasInput('filter_rst')) {
 			$redirect = (new CUrl('zabbix.php'))->setArgument('action', $this->getAction());
@@ -89,6 +89,7 @@ class TicketPlatform extends CController {
 			'show' => $this->getInput('show', TRIGGERS_OPTION_RECENT_PROBLEM),
 			'server_ids' => $this->getInput('server_ids', []),
 			'name' => $this->getInput('name', ''),
+			'host' => $this->getInput('host', ''),
 			'severities' => $this->getInput('severities', []),
 			'age_state' => $this->getInput('age_state', 0),
 			'age' => $this->getInput('age', 14),
@@ -121,8 +122,7 @@ class TicketPlatform extends CController {
 			'filter' => $filter,
 			'problems' => $problems,
 			'errors' => $errors,
-			'servers' => $servers,
-			'debug' => RemoteApi::getDebug()
+			'servers' => $servers
 		]);
 		$response->setTitle(_('Ticket Platform'));
 
@@ -134,11 +134,11 @@ class TicketPlatform extends CController {
 			return $servers;
 		}
 
-		$allowed = array_fill_keys($server_ids, true);
+		$allowed = array_map('strval', $server_ids);
 		$filtered = [];
 
 		foreach ($servers as $server) {
-			if (array_key_exists($server['id'], $allowed)) {
+			if (in_array((string) $server['id'], $allowed, true)) {
 				$filtered[] = $server;
 			}
 		}
@@ -146,17 +146,40 @@ class TicketPlatform extends CController {
 		return $filtered;
 	}
 
+	private function addLocalServer(array $servers): array {
+		$local_name = 'Local server';
+		$config = Config::get();
+		if (!empty($config['local_server_name'])) {
+			$local_name = $config['local_server_name'];
+		}
+
+		$servers[] = [
+			'id' => 'local',
+			'name' => $local_name,
+			'api_url' => '',
+			'api_token' => '',
+			'hostgroup' => '',
+			'include_subgroups' => 1,
+			'enabled' => 1,
+			'is_local' => true
+		];
+
+		return $servers;
+	}
+
 	private function normalizeFilter(array $filter): array {
 		$time_from = null;
 		$time_till = null;
 		$recent = null;
 
-		$range_time_parser = new CRangeTimeParser();
-		if ($range_time_parser->parse($filter['from']) == CParser::PARSE_SUCCESS) {
-			$time_from = $range_time_parser->getDateTime(true)->getTimestamp();
-		}
-		if ($range_time_parser->parse($filter['to']) == CParser::PARSE_SUCCESS) {
-			$time_till = $range_time_parser->getDateTime(false)->getTimestamp();
+		if ($filter['show'] == TRIGGERS_OPTION_ALL) {
+			$range_time_parser = new CRangeTimeParser();
+			if ($range_time_parser->parse($filter['from']) == CParser::PARSE_SUCCESS) {
+				$time_from = $range_time_parser->getDateTime(true)->getTimestamp();
+			}
+			if ($range_time_parser->parse($filter['to']) == CParser::PARSE_SUCCESS) {
+				$time_till = $range_time_parser->getDateTime(false)->getTimestamp();
+			}
 		}
 
 		if ($filter['age_state']) {
@@ -194,6 +217,7 @@ class TicketPlatform extends CController {
 			'show' => $filter['show'],
 			'severities' => $filter['severities'],
 			'name' => $filter['name'],
+			'host' => $filter['host'],
 			'acknowledged' => $acknowledged,
 			'show_suppressed' => (bool) $filter['show_suppressed'],
 			'recent' => $recent,

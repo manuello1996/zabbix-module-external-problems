@@ -28,6 +28,7 @@ use CSettingsHelper;
 use CWebUser;
 use Exception;
 use Modules\TicketPlatform\Includes\Config;
+use Modules\TicketPlatform\Includes\LocalApi;
 use Modules\TicketPlatform\Includes\RemoteApi;
 
 class TicketPlatformEventDetails extends CController {
@@ -125,7 +126,8 @@ class TicketPlatformEventDetails extends CController {
 	private function getServer(string $server_id): ?array {
 		$config = Config::get();
 
-		foreach ($config['servers'] as $server) {
+		$servers = $this->addLocalServer($config['servers']);
+		foreach ($servers as $server) {
 			if ($server['id'] === $server_id) {
 				return $server;
 			}
@@ -135,7 +137,7 @@ class TicketPlatformEventDetails extends CController {
 	}
 
 	private function getTrigger(array $server, string $triggerid): array {
-		$triggers = RemoteApi::call($server['api_url'], $server['api_token'], 'trigger.get', [
+		$triggers = $this->callApi($server, 'trigger.get', [
 			'output' => ['triggerid', 'description', 'expression', 'recovery_expression', 'priority', 'type',
 				'manual_close', 'status', 'comments', 'opdata'
 			],
@@ -153,7 +155,7 @@ class TicketPlatformEventDetails extends CController {
 	}
 
 	private function getEvent(array $server, string $eventid, string $triggerid): array {
-		$events = RemoteApi::call($server['api_url'], $server['api_token'], 'event.get', [
+		$events = $this->callApi($server, 'event.get', [
 			'output' => ['eventid', 'r_eventid', 'clock', 'ns', 'objectid', 'name', 'acknowledged', 'severity',
 				'cause_eventid'
 			],
@@ -177,7 +179,7 @@ class TicketPlatformEventDetails extends CController {
 		$event['opdata'] = '';
 
 		if ($event['r_eventid'] != 0) {
-			$r_events = RemoteApi::call($server['api_url'], $server['api_token'], 'event.get', [
+			$r_events = $this->callApi($server, 'event.get', [
 				'output' => ['correlationid', 'userid'],
 				'source' => EVENT_SOURCE_TRIGGERS,
 				'object' => EVENT_OBJECT_TRIGGER,
@@ -200,7 +202,7 @@ class TicketPlatformEventDetails extends CController {
 	}
 
 	private function getCauseEvent(array $server, string $eventid): ?array {
-		$events = RemoteApi::call($server['api_url'], $server['api_token'], 'event.get', [
+		$events = $this->callApi($server, 'event.get', [
 			'output' => ['eventid', 'name', 'objectid'],
 			'eventids' => [$eventid]
 		]);
@@ -215,7 +217,7 @@ class TicketPlatformEventDetails extends CController {
 		if ((int) $event['r_eventid'] > 0) {
 			$alert_eventids[] = (string) $event['r_eventid'];
 
-			$r_events = RemoteApi::call($server['api_url'], $server['api_token'], 'event.get', [
+			$r_events = $this->callApi($server, 'event.get', [
 				'output' => ['clock'],
 				'eventids' => [$event['r_eventid']],
 				'preservekeys' => true
@@ -223,7 +225,7 @@ class TicketPlatformEventDetails extends CController {
 		}
 
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
-		$alerts = RemoteApi::call($server['api_url'], $server['api_token'], 'alert.get', [
+		$alerts = $this->callApi($server, 'alert.get', [
 			'output' => ['alertid', 'alerttype', 'clock', 'error', 'eventid', 'esc_step', 'mediatypeid', 'message',
 				'retries', 'sendto', 'status', 'subject', 'userid', 'p_eventid', 'acknowledgeid'
 			],
@@ -307,7 +309,7 @@ class TicketPlatformEventDetails extends CController {
 	}
 
 	private function getUsers(array $server, array $userids): array {
-		$users = RemoteApi::call($server['api_url'], $server['api_token'], 'user.get', [
+		$users = $this->callApi($server, 'user.get', [
 			'output' => ['userid', 'username', 'name', 'surname'],
 			'userids' => $userids
 		]);
@@ -321,7 +323,7 @@ class TicketPlatformEventDetails extends CController {
 	}
 
 	private function getMediatypes(array $server, array $mediatypeids): array {
-		$mediatypes = RemoteApi::call($server['api_url'], $server['api_token'], 'mediatype.get', [
+		$mediatypes = $this->callApi($server, 'mediatype.get', [
 			'output' => ['mediatypeid', 'name', 'maxattempts'],
 			'mediatypeids' => $mediatypeids
 		]);
@@ -339,7 +341,7 @@ class TicketPlatformEventDetails extends CController {
 			return $trigger['opdata'];
 		}
 
-		$items = RemoteApi::call($server['api_url'], $server['api_token'], 'item.get', [
+		$items = $this->callApi($server, 'item.get', [
 			'output' => ['itemid', 'name', 'value_type', 'units', 'lastvalue', 'lastclock', 'valuemapid'],
 			'selectValueMap' => ['mappings'],
 			'triggerids' => [$trigger['triggerid']]
@@ -370,7 +372,7 @@ class TicketPlatformEventDetails extends CController {
 	}
 
 	private function getEventList(array $server, array $event): array {
-		$events = RemoteApi::call($server['api_url'], $server['api_token'], 'event.get', [
+		$events = $this->callApi($server, 'event.get', [
 			'output' => ['eventid', 'objectid', 'acknowledged', 'clock', 'ns', 'severity', 'r_eventid',
 				'cause_eventid'
 			],
@@ -400,7 +402,7 @@ class TicketPlatformEventDetails extends CController {
 		}
 
 		$r_events = $r_eventids
-			? RemoteApi::call($server['api_url'], $server['api_token'], 'event.get', [
+			? $this->callApi($server, 'event.get', [
 				'output' => ['clock'],
 				'source' => EVENT_SOURCE_TRIGGERS,
 				'object' => EVENT_OBJECT_TRIGGER,
@@ -440,7 +442,7 @@ class TicketPlatformEventDetails extends CController {
 		}
 
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
-		$alerts = RemoteApi::call($server['api_url'], $server['api_token'], 'alert.get', [
+		$alerts = $this->callApi($server, 'alert.get', [
 			'output' => ['alertid', 'eventid', 'alerttype', 'status', 'mediatypeid', 'userid'],
 			'eventids' => $alert_eventids,
 			'limit' => $search_limit
@@ -480,5 +482,28 @@ class TicketPlatformEventDetails extends CController {
 		}
 
 		return $summary;
+	}
+
+	private function callApi(array $server, string $method, array $params): array {
+		if (!empty($server['is_local'])) {
+			return LocalApi::call($method, $params);
+		}
+
+		return RemoteApi::call($server['api_url'], $server['api_token'], $method, $params);
+	}
+
+	private function addLocalServer(array $servers): array {
+		$servers[] = [
+			'id' => 'local',
+			'name' => _('Local server'),
+			'api_url' => '',
+			'api_token' => '',
+			'hostgroup' => '',
+			'include_subgroups' => 1,
+			'enabled' => 1,
+			'is_local' => true
+		];
+
+		return $servers;
 	}
 }

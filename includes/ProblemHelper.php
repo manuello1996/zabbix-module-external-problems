@@ -24,10 +24,10 @@ namespace Modules\TicketPlatform\Includes;
 use Exception;
 use CSettingsHelper;
 use Modules\TicketPlatform\Includes\RemoteApi;
+use Modules\TicketPlatform\Includes\LocalApi;
 
 class ProblemHelper {
 	public static function fetchProblems(array $servers, array $filter, int $cache_ttl): array {
-		RemoteApi::clearDebug();
 		$problems = [];
 		$errors = [];
 
@@ -36,32 +36,12 @@ class ProblemHelper {
 				continue;
 			}
 
-			try {
-				$version = RemoteApi::callNoAuth($server['api_url'], 'apiinfo.version', []);
-				RemoteApi::debug('apiinfo.version url='.$server['api_url'].' version='.$version);
-			}
-			catch (Exception $e) {
-				RemoteApi::debug('apiinfo.version failed url='.$server['api_url'].' message='.$e->getMessage());
-			}
-
-			try {
-				$users = RemoteApi::call($server['api_url'], $server['api_token'], 'user.get', [
+			if (empty($server['is_local'])) {
+				RemoteApi::callNoAuth($server['api_url'], 'apiinfo.version', []);
+				RemoteApi::call($server['api_url'], $server['api_token'], 'user.get', [
 					'output' => ['userid', 'username', 'roleid', 'status'],
 					'limit' => 1
 				]);
-				if ($users) {
-					$user = $users[0];
-					$roleid = array_key_exists('roleid', $user) ? $user['roleid'] : '';
-					$status = array_key_exists('status', $user) ? $user['status'] : '';
-					RemoteApi::debug('user.get ok url='.$server['api_url'].' username='.$user['username']
-						.' status='.$status.' roleid='.$roleid);
-				}
-				else {
-					RemoteApi::debug('user.get ok url='.$server['api_url'].' empty result');
-				}
-			}
-			catch (Exception $e) {
-				RemoteApi::debug('user.get failed url='.$server['api_url'].' message='.$e->getMessage());
 			}
 
 			$cache_key = Cache::makeKey([
@@ -81,14 +61,18 @@ class ProblemHelper {
 
 			try {
 				$groupids = self::resolveGroupIds($server);
+				$hostids = self::resolveHostIds($server, $filter['host']);
+				if ($filter['host'] !== '' && !$hostids) {
+					continue;
+				}
 				$items = [];
 				if ($filter['show'] == TRIGGERS_OPTION_ALL) {
-					$event_params = self::buildEventParams($filter, $groupids);
-					$items = RemoteApi::call($server['api_url'], $server['api_token'], 'event.get', $event_params);
+					$event_params = self::buildEventParams($filter, $groupids, $hostids);
+					$items = self::callApi($server, 'event.get', $event_params);
 				}
 				else {
-					$problem_params = self::buildProblemParams($filter, $groupids);
-					$items = RemoteApi::call($server['api_url'], $server['api_token'], 'problem.get', $problem_params);
+					$problem_params = self::buildProblemParams($filter, $groupids, $hostids);
+					$items = self::callApi($server, 'problem.get', $problem_params);
 				}
 				$event_info = self::getEventInfo($server, $items);
 				$actions_summary = self::getEventActionsSummary($server, $items);
@@ -128,7 +112,7 @@ class ProblemHelper {
 						'objectid' => $objectid,
 						'server_id' => $server['id'],
 						'server_name' => $server['name'],
-						'server_url' => RemoteApi::getWebUrl($server['api_url']),
+						'server_url' => empty($server['is_local']) ? RemoteApi::getWebUrl($server['api_url']) : '',
 						'actions_count' => (int) $actions['count'],
 						'actions_has_uncomplete' => (bool) $actions['has_uncomplete'],
 						'actions_has_failed' => (bool) $actions['has_failed']
@@ -166,16 +150,18 @@ class ProblemHelper {
 			$params['filter'] = ['name' => $server['hostgroup']];
 		}
 
-		$groups = RemoteApi::call($server['api_url'], $server['api_token'], 'hostgroup.get', $params);
+		$groups = self::callApi($server, 'hostgroup.get', $params);
 
 		return array_values(array_unique(array_column($groups, 'groupid')));
 	}
 
-	private static function buildProblemParams(array $filter, array $groupids): array {
+	private static function buildProblemParams(array $filter, array $groupids, array $hostids): array {
 		$params = [
 			'output' => ['eventid', 'clock', 'severity', 'name', 'acknowledged', 'r_eventid', 'objectid',
 				'suppressed'
 			],
+			'source' => EVENT_SOURCE_TRIGGERS,
+			'object' => EVENT_OBJECT_TRIGGER,
 			'sortfield' => ['eventid'],
 			'sortorder' => ZBX_SORT_DOWN
 		];
@@ -184,13 +170,18 @@ class ProblemHelper {
 			$params['groupids'] = $groupids;
 		}
 
+		if ($hostids) {
+			$params['hostids'] = $hostids;
+		}
+
 		if ($filter['severities']) {
 			$params['severities'] = $filter['severities'];
 		}
 
 		if ($filter['name'] !== '') {
-			$params['search'] = ['name' => $filter['name']];
+			$params['search'] = ['name' => '*'.$filter['name'].'*'];
 			$params['searchWildcardsEnabled'] = true;
+			$params['searchByAny'] = true;
 		}
 
 		if ($filter['acknowledged'] !== null) {
@@ -229,7 +220,7 @@ class ProblemHelper {
 		return $params;
 	}
 
-	private static function buildEventParams(array $filter, array $groupids): array {
+	private static function buildEventParams(array $filter, array $groupids, array $hostids): array {
 		$params = [
 			'output' => ['eventid', 'clock', 'severity', 'name', 'acknowledged', 'r_eventid', 'objectid'],
 			'source' => EVENT_SOURCE_TRIGGERS,
@@ -243,13 +234,18 @@ class ProblemHelper {
 			$params['groupids'] = $groupids;
 		}
 
+		if ($hostids) {
+			$params['hostids'] = $hostids;
+		}
+
 		if ($filter['severities']) {
 			$params['severities'] = $filter['severities'];
 		}
 
 		if ($filter['name'] !== '') {
-			$params['search'] = ['name' => $filter['name']];
+			$params['search'] = ['name' => '*'.$filter['name'].'*'];
 			$params['searchWildcardsEnabled'] = true;
+			$params['searchByAny'] = true;
 		}
 
 		if ($filter['acknowledged'] !== null) {
@@ -286,12 +282,12 @@ class ProblemHelper {
 		}
 
 		$eventids = array_column($problems, 'eventid');
-		$events = RemoteApi::call($server['api_url'], $server['api_token'], 'event.get', [
+		$events = self::callApi($server, 'event.get', [
 			'output' => ['eventid', 'objectid'],
 			'eventids' => $eventids,
 			'source' => EVENT_SOURCE_TRIGGERS,
 			'object' => EVENT_OBJECT_TRIGGER,
-			'selectHosts' => ['name', 'host'],
+			'selectHosts' => ['hostid', 'name', 'host'],
 			'selectAcknowledges' => ['clock', 'action', 'suppress_until']
 		]);
 
@@ -300,7 +296,10 @@ class ProblemHelper {
 			$hosts = [];
 			if (array_key_exists('hosts', $event)) {
 				foreach ($event['hosts'] as $host) {
-					$hosts[] = $host['name'] !== '' ? $host['name'] : $host['host'];
+					$hosts[] = [
+						'hostid' => $host['hostid'],
+						'name' => $host['name'] !== '' ? $host['name'] : $host['host']
+					];
 				}
 			}
 			$event_info[$event['eventid']] = [
@@ -354,7 +353,7 @@ class ProblemHelper {
 		);
 		$alert_eventids = array_values(array_unique(array_merge($eventids, $r_eventids)));
 
-		$events = RemoteApi::call($server['api_url'], $server['api_token'], 'event.get', [
+		$events = self::callApi($server, 'event.get', [
 			'output' => ['eventid'],
 			'eventids' => $eventids,
 			'selectAcknowledges' => ['userid', 'action', 'message', 'clock', 'new_severity', 'old_severity',
@@ -370,7 +369,7 @@ class ProblemHelper {
 		}
 
 		$search_limit = CSettingsHelper::get(CSettingsHelper::SEARCH_LIMIT);
-		$alerts = RemoteApi::call($server['api_url'], $server['api_token'], 'alert.get', [
+		$alerts = self::callApi($server, 'alert.get', [
 			'output' => ['alertid', 'eventid', 'alerttype', 'status', 'mediatypeid', 'userid'],
 			'eventids' => $alert_eventids,
 			'limit' => $search_limit
@@ -410,5 +409,33 @@ class ProblemHelper {
 		}
 
 		return $summary;
+	}
+
+	private static function resolveHostIds(array $server, string $host_query): array {
+		if ($host_query === '') {
+			return [];
+		}
+
+		$params = [
+			'output' => ['hostid', 'name', 'host'],
+			'search' => [
+				'name' => '*'.$host_query.'*',
+				'host' => '*'.$host_query.'*'
+			],
+			'searchWildcardsEnabled' => true,
+			'searchByAny' => true
+		];
+
+		$hosts = self::callApi($server, 'host.get', $params);
+
+		return array_values(array_unique(array_column($hosts, 'hostid')));
+	}
+
+	private static function callApi(array $server, string $method, array $params): array {
+		if (!empty($server['is_local'])) {
+			return LocalApi::call($method, $params);
+		}
+
+		return RemoteApi::call($server['api_url'], $server['api_token'], $method, $params);
 	}
 }

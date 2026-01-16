@@ -36,6 +36,24 @@
 		"ticket.platform.eventdetails": {
 			"class": "TicketPlatformEventDetails",
 			"view": "ticket.platform.eventdetails"
+		},
+		"ticket.platform.triggerdetails": {
+			"class": "TicketPlatformTriggerDetails",
+			"view": "ticket.platform.triggerdetails"
+		},
+		"ticket.platform.trigger.popup": {
+			"class": "TicketPlatformTriggerPopup",
+			"view": "ticket.platform.trigger.popup",
+			"layout": "layout.json"
+		},
+		"ticket.platform.host.popup": {
+			"class": "TicketPlatformHostPopup",
+			"view": "ticket.platform.host.popup",
+			"layout": "layout.json"
+		},
+		"ticket.platform.host.update": {
+			"class": "TicketPlatformHostUpdate",
+			"layout": "layout.json"
 		}
 	}
 }

@@ -21,41 +21,32 @@
 
 namespace Modules\TicketPlatform\Includes;
 
-use APP;
-use Zabbix\Core\CModule;
+use API;
+use Exception;
 
-class Config {
-	public const MODULE_ID = 'ticket-platform';
-
-	private const DEFAULT_CONFIG = [
-		'servers' => [],
-		'cache_ttl' => 60,
-		'local_server_name' => 'Local server'
-	];
-
-	public static function getModule(): ?CModule {
-		return APP::ModuleManager()->getModule(self::MODULE_ID);
-	}
-
-	public static function get(): array {
-		$module = self::getModule();
-
-		if ($module === null) {
-			return self::DEFAULT_CONFIG;
+class LocalApi {
+	public static function call(string $method, array $params): array {
+		switch ($method) {
+			case 'problem.get':
+				return API::Problem()->get($params);
+			case 'event.get':
+				return API::Event()->get($params);
+			case 'hostgroup.get':
+				return API::HostGroup()->get($params);
+			case 'host.get':
+				return API::Host()->get($params);
+			case 'alert.get':
+				return API::Alert()->get($params);
+			case 'user.get':
+				return API::User()->get($params);
+			case 'mediatype.get':
+				return API::Mediatype()->get($params);
+			case 'trigger.get':
+				return API::Trigger()->get($params);
+			case 'item.get':
+				return API::Item()->get($params);
+			default:
+				throw new Exception('Unsupported local API method: '.$method);
 		}
-
-		$config = $module->getConfig();
-
-		return array_replace(self::DEFAULT_CONFIG, $config);
-	}
-
-	public static function save(array $config): void {
-		$module = self::getModule();
-
-		if ($module === null) {
-			return;
-		}
-
-		$module->setConfig($config);
 	}
 }
