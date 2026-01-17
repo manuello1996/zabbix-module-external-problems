@@ -23,6 +23,7 @@ namespace Modules\TicketPlatform\Includes;
 
 use Exception;
 use CSettingsHelper;
+use Modules\TicketPlatform\Includes\Config;
 use Modules\TicketPlatform\Includes\RemoteApi;
 use Modules\TicketPlatform\Includes\LocalApi;
 
@@ -37,7 +38,13 @@ class ProblemHelper {
 			}
 
 			if (empty($server['is_local'])) {
-				RemoteApi::callNoAuth($server['api_url'], 'apiinfo.version', []);
+				$api_version = RemoteApi::callNoAuth($server['api_url'], 'apiinfo.version', []);
+				if (is_string($api_version) && $api_version !== '') {
+					if (!array_key_exists('api_version', $server) || $server['api_version'] !== $api_version) {
+						self::updateServerVersion($server['id'], $api_version);
+					}
+					$server['api_version'] = $api_version;
+				}
 				RemoteApi::call($server['api_url'], $server['api_token'], 'user.get', [
 					'output' => ['userid', 'username', 'roleid', 'status'],
 					'limit' => 1
@@ -49,7 +56,8 @@ class ProblemHelper {
 				'server' => [
 					'id' => $server['id'],
 					'hostgroup' => $server['hostgroup'],
-					'include_subgroups' => $server['include_subgroups']
+					'include_subgroups' => $server['include_subgroups'],
+					'api_version' => $server['api_version'] ?? ''
 				]
 			]);
 
@@ -437,5 +445,25 @@ class ProblemHelper {
 		}
 
 		return RemoteApi::call($server['api_url'], $server['api_token'], $method, $params);
+	}
+
+	private static function updateServerVersion(string $server_id, string $api_version): void {
+		$config = Config::get();
+		$updated = false;
+		foreach ($config['servers'] as $index => $server) {
+			if ($server['id'] === $server_id) {
+				$current_version = $server['api_version'] ?? '';
+				if ($current_version !== $api_version) {
+					$config['servers'][$index]['api_version'] = $api_version;
+					$updated = true;
+					Cache::clearServer($server_id);
+				}
+				break;
+			}
+		}
+
+		if ($updated) {
+			Config::save($config);
+		}
 	}
 }

@@ -66,8 +66,22 @@ $form->addItem(
 		->addClass(ZBX_STYLE_BTN_ALT)
 );
 
-(new CHtmlPage())
+$page = (new CHtmlPage())
 	->setTitle(_('Ticket Platform settings'))
-	->addItem(new CTag('h1', true, $is_edit ? _('Edit server') : _('Add server')))
-	->addItem($form)
+	->addItem(new CTag('h1', true, $is_edit ? _('Edit server') : _('Add server')));
+
+if (array_key_exists('error', $data)) {
+	$page->addItem(
+		makeMessageBox(
+			ZBX_STYLE_MSG_BAD,
+			array_map(function ($message) {
+				return ['message' => $message];
+			}, $data['error']['messages']),
+			$data['error']['title'],
+			true
+		)
+	);
+}
+
+$page->addItem($form)
 	->show();

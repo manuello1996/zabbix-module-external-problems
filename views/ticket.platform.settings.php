@@ -47,6 +47,7 @@ $servers_table = (new CTableInfo())
 	->setHeader([
 		_('Name'),
 		_('API URL'),
+		_('API version'),
 		_('Host group'),
 		_('Include subgroups'),
 		_('Enabled'),
@@ -77,6 +78,7 @@ foreach ($data['servers'] as $server) {
 	$servers_table->addRow([
 		$server['name'],
 		$server['api_url'],
+		($server['api_version'] ?? '') !== '' ? $server['api_version'] : _('Unknown'),
 		$server['hostgroup'] !== '' ? $server['hostgroup'] : _('All'),
 		$server['include_subgroups'] ? _('Yes') : _('No'),
 		$server['enabled'] ? _('Yes') : _('No'),

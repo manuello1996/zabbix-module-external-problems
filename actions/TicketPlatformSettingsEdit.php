@@ -27,7 +27,9 @@ use CControllerResponseFatal;
 use CControllerResponseRedirect;
 use CUrl;
 use CWebUser;
+use Exception;
 use Modules\TicketPlatform\Includes\Config;
+use Modules\TicketPlatform\Includes\RemoteApi;
 
 class TicketPlatformSettingsEdit extends CController {
 
@@ -74,6 +76,53 @@ class TicketPlatformSettingsEdit extends CController {
 			$hostgroup = trim($this->getInput('hostgroup', ''));
 			$include_subgroups = (int) $this->getInput('include_subgroups', 0);
 			$enabled = (int) $this->getInput('enabled', 0);
+			$api_version = '';
+
+			$existing_server = null;
+			foreach ($config['servers'] as $existing) {
+				if ($existing['id'] === $server_id) {
+					$existing_server = $existing;
+					break;
+				}
+			}
+
+			if ($api_token === '' && $existing_server !== null) {
+				$api_token = $existing_server['api_token'];
+			}
+
+			if ($api_url === '') {
+				$this->setErrorResponse(_('Cannot save server'), [_('API URL is required.')], [
+					'id' => $server_id,
+					'name' => $name,
+					'api_url' => $api_url,
+					'api_token' => $api_token,
+					'hostgroup' => $hostgroup,
+					'include_subgroups' => $include_subgroups,
+					'enabled' => $enabled,
+					'api_version' => $existing_server['api_version'] ?? ''
+				]);
+				return;
+			}
+
+			try {
+				$api_version = RemoteApi::callNoAuth($api_url, 'apiinfo.version', []);
+				if (!is_string($api_version) || $api_version === '') {
+					throw new Exception(_('Invalid API version response.'));
+				}
+			}
+			catch (Exception $e) {
+				$this->setErrorResponse(_('Cannot save server'), [$e->getMessage()], [
+					'id' => $server_id,
+					'name' => $name,
+					'api_url' => $api_url,
+					'api_token' => $api_token,
+					'hostgroup' => $hostgroup,
+					'include_subgroups' => $include_subgroups,
+					'enabled' => $enabled,
+					'api_version' => $existing_server['api_version'] ?? ''
+				]);
+				return;
+			}
 
 			$server = [
 				'id' => $server_id !== '' ? $server_id : bin2hex(random_bytes(8)),
@@ -82,15 +131,13 @@ class TicketPlatformSettingsEdit extends CController {
 				'api_token' => $api_token,
 				'hostgroup' => $hostgroup,
 				'include_subgroups' => $include_subgroups,
-				'enabled' => $enabled
+				'enabled' => $enabled,
+				'api_version' => $api_version
 			];
 
 			$updated = false;
 			foreach ($config['servers'] as $index => $existing) {
 				if ($existing['id'] === $server['id']) {
-					if ($server['api_token'] === '') {
-						$server['api_token'] = $existing['api_token'];
-					}
 					$config['servers'][$index] = $server;
 					$updated = true;
 					break;
@@ -116,7 +163,8 @@ class TicketPlatformSettingsEdit extends CController {
 			'api_token' => '',
 			'hostgroup' => '',
 			'include_subgroups' => 1,
-			'enabled' => 1
+			'enabled' => 1,
+			'api_version' => ''
 		];
 
 		foreach ($config['servers'] as $existing) {
@@ -133,5 +181,16 @@ class TicketPlatformSettingsEdit extends CController {
 		$response->setTitle(_('Ticket Platform settings'));
 
 		$this->setResponse($response);
+	}
+
+	private function setErrorResponse(string $title, array $messages, array $server): void {
+		$this->setResponse(new CControllerResponseData([
+			'action' => $this->getAction(),
+			'server' => $server,
+			'error' => [
+				'title' => $title,
+				'messages' => $messages
+			]
+		]));
 	}
 }
