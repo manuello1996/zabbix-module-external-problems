@@ -181,6 +181,40 @@ if ($filter['tags']) {
 $url->setArgument('from', $filter['from']);
 $url->setArgument('to', $filter['to']);
 
+	$refresh_form = (new CForm('get'))
+		->addVar('action', $data['action'])
+		->addVar('refresh_status', 1)
+		->addVar('filter_set', 1)
+		->addVar('show', $filter['show'])
+		->addVar('name', $filter['name'])
+		->addVar('host', $filter['host'])
+		->addVar('sort', $filter['sort'])
+		->addVar('sortorder', $filter['sortorder'])
+		->addVar('page', $filter['page']);
+
+	foreach ($filter['server_ids'] as $server_id) {
+		$refresh_form->addVar('server_ids[]', $server_id);
+	}
+	foreach ($filter['severities'] as $severity) {
+		$refresh_form->addVar('severities[]', $severity);
+	}
+	if ($filter['age_state']) {
+		$refresh_form->addVar('age_state', $filter['age_state']);
+		$refresh_form->addVar('age', $filter['age']);
+	}
+	$refresh_form->addVar('acknowledgement_status', $filter['acknowledgement_status']);
+	$refresh_form->addVar('show_suppressed', $filter['show_suppressed']);
+	$refresh_form->addVar('show_tags', $filter['show_tags']);
+	$refresh_form->addVar('tag_name_format', $filter['tag_name_format']);
+	if ($filter['tags']) {
+		$refresh_form->addVar('tags[0][tag]', $tag_filter['tag']);
+		$refresh_form->addVar('tags[0][operator]', $tag_filter['operator']);
+		$refresh_form->addVar('tags[0][value]', $tag_filter['value']);
+	}
+	$refresh_form->addVar('from', $filter['from']);
+	$refresh_form->addVar('to', $filter['to']);
+	$refresh_form->addItem(new CSubmit('refresh', _('Refresh status')));
+
 	if ($problems) {
 		usort($problems, function ($a, $b) use ($filter) {
 			switch ($filter['sort']) {
@@ -454,6 +488,7 @@ if ($data['errors']) {
 
 $page
 	->addItem($problems_table)
+	->addItem($refresh_form)
 	->show();
 
 (new CScriptTag('

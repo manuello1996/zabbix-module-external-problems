@@ -30,6 +30,7 @@ use CSettingsHelper;
 use CParser;
 use CUrl;
 use CWebUser;
+use Modules\TicketPlatform\Includes\Cache;
 use Modules\TicketPlatform\Includes\Config;
 use Modules\TicketPlatform\Includes\ProblemHelper;
 
@@ -43,6 +44,7 @@ class TicketPlatform extends CController {
 		$fields = [
 			'filter_set' => 'in 1',
 			'filter_rst' => 'in 1',
+			'refresh_status' => 'in 1',
 			'show' => 'in '.TRIGGERS_OPTION_RECENT_PROBLEM.','.TRIGGERS_OPTION_IN_PROBLEM.','.TRIGGERS_OPTION_ALL,
 			'server_ids' => 'array',
 			'name' => 'string',
@@ -110,6 +112,13 @@ class TicketPlatform extends CController {
 
 		$normalized_filter = $this->normalizeFilter($filter);
 		$visible_servers = $this->filterServers($servers, $filter['server_ids']);
+
+		if ($this->hasInput('refresh_status')) {
+			foreach ($visible_servers as $server) {
+				Cache::clearServer($server['id']);
+				Cache::clearServerMeta($server['id']);
+			}
+		}
 
 		[$problems, $errors] = ProblemHelper::fetchProblems(
 			$visible_servers,

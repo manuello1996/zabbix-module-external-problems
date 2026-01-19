@@ -23,6 +23,8 @@ namespace Modules\TicketPlatform\Includes;
 
 class Cache {
 	private const CACHE_FILE = 'zbx_ticket_platform_cache.json';
+	private const META_KEYS = ['api_version', 'connection_status', 'last_reached'];
+	private const META_TTL = 60;
 
 	public static function makeKey(array $payload): string {
 		return sha1(json_encode($payload, JSON_UNESCAPED_SLASHES));
@@ -62,6 +64,79 @@ class Cache {
 			unset($cache['servers'][$server_id]);
 			if (!$cache['servers']) {
 				unset($cache['servers']);
+			}
+			self::save($cache);
+		}
+	}
+
+	public static function getServerMeta(string $server_id): array {
+		$cache = self::load();
+		if (!array_key_exists('server_meta', $cache) || !array_key_exists($server_id, $cache['server_meta'])) {
+			return [];
+		}
+
+		$meta = $cache['server_meta'][$server_id];
+		if (!is_array($meta)) {
+			return [];
+		}
+		if (!array_key_exists('ts', $meta) || (time() - (int) $meta['ts']) > self::META_TTL) {
+			return [];
+		}
+
+		return array_intersect_key($meta, array_flip(self::META_KEYS));
+	}
+
+	public static function getServerMetaAll(): array {
+		$cache = self::load();
+		if (!array_key_exists('server_meta', $cache) || !is_array($cache['server_meta'])) {
+			return [];
+		}
+
+		$all = [];
+		foreach ($cache['server_meta'] as $server_id => $meta) {
+			if (!is_array($meta)) {
+				continue;
+			}
+			if (!array_key_exists('ts', $meta) || (time() - (int) $meta['ts']) > self::META_TTL) {
+				continue;
+			}
+			$filtered = array_intersect_key($meta, array_flip(self::META_KEYS));
+			if ($filtered) {
+				$all[$server_id] = $filtered;
+			}
+		}
+
+		return $all;
+	}
+
+	public static function setServerMeta(string $server_id, array $updates): void {
+		$updates = array_intersect_key($updates, array_flip(self::META_KEYS));
+		if (!$updates) {
+			return;
+		}
+
+		$cache = self::load();
+		if (!array_key_exists('server_meta', $cache) || !is_array($cache['server_meta'])) {
+			$cache['server_meta'] = [];
+		}
+		if (!array_key_exists($server_id, $cache['server_meta']) || !is_array($cache['server_meta'][$server_id])) {
+			$cache['server_meta'][$server_id] = [];
+		}
+
+		foreach ($updates as $key => $value) {
+			$cache['server_meta'][$server_id][$key] = $value;
+		}
+		$cache['server_meta'][$server_id]['ts'] = time();
+
+		self::save($cache);
+	}
+
+	public static function clearServerMeta(string $server_id): void {
+		$cache = self::load();
+		if (array_key_exists('server_meta', $cache) && array_key_exists($server_id, $cache['server_meta'])) {
+			unset($cache['server_meta'][$server_id]);
+			if (!$cache['server_meta']) {
+				unset($cache['server_meta']);
 			}
 			self::save($cache);
 		}

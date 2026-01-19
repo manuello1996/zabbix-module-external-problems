@@ -45,8 +45,19 @@ class Config {
 		}
 
 		$config = $module->getConfig();
+		$config = array_replace(self::DEFAULT_CONFIG, $config);
 
-		return array_replace(self::DEFAULT_CONFIG, $config);
+		$meta = Cache::getServerMetaAll();
+		if ($meta && array_key_exists('servers', $config)) {
+			foreach ($config['servers'] as $index => $server) {
+				$server_id = $server['id'] ?? null;
+				if ($server_id !== null && array_key_exists($server_id, $meta)) {
+					$config['servers'][$index] = array_merge($server, $meta[$server_id]);
+				}
+			}
+		}
+
+		return $config;
 	}
 
 	public static function save(array $config): void {

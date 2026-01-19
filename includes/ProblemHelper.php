@@ -23,6 +23,7 @@ namespace Modules\TicketPlatform\Includes;
 
 use Exception;
 use CSettingsHelper;
+use CWebUser;
 use Modules\TicketPlatform\Includes\Config;
 use Modules\TicketPlatform\Includes\RemoteApi;
 use Modules\TicketPlatform\Includes\LocalApi;
@@ -512,20 +513,39 @@ class ProblemHelper {
 
 	private static function updateServerMeta(string $server_id, array $updates, bool $clear_cache_on_version_change): void {
 		$config = Config::get();
+		$current_version = '';
+		foreach ($config['servers'] as $server) {
+			if ($server['id'] === $server_id) {
+				$current_version = $server['api_version'] ?? '';
+				break;
+			}
+		}
+
+		if ($current_version === '') {
+			$meta = Cache::getServerMeta($server_id);
+			$current_version = $meta['api_version'] ?? '';
+		}
+
+		if ($clear_cache_on_version_change
+				&& array_key_exists('api_version', $updates)
+				&& $updates['api_version'] !== ''
+				&& $updates['api_version'] !== $current_version) {
+			Cache::clearServer($server_id);
+		}
+
+		Cache::setServerMeta($server_id, $updates);
+
+		if (CWebUser::getType() < USER_TYPE_SUPER_ADMIN) {
+			return;
+		}
+
 		$updated = false;
 		foreach ($config['servers'] as $index => $server) {
 			if ($server['id'] === $server_id) {
-				$current_version = $server['api_version'] ?? '';
 				foreach ($updates as $key => $value) {
 					$config['servers'][$index][$key] = $value;
 				}
 				$updated = true;
-				if ($clear_cache_on_version_change
-						&& array_key_exists('api_version', $updates)
-						&& $updates['api_version'] !== ''
-						&& $updates['api_version'] !== $current_version) {
-					Cache::clearServer($server_id);
-				}
 				break;
 			}
 		}

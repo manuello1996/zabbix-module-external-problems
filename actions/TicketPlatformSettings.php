@@ -57,7 +57,7 @@ class TicketPlatformSettings extends CController {
 	}
 
 	protected function checkPermissions(): bool {
-		return CWebUser::getType() >= USER_TYPE_ZABBIX_ADMIN;
+		return CWebUser::getType() >= USER_TYPE_SUPER_ADMIN;
 	}
 
 	protected function doAction(): void {

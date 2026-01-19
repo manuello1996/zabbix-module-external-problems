@@ -22,7 +22,8 @@ namespace Modules\TicketPlatform;
 use Zabbix\Core\CModule,
 	APP,
 	CMenu,
-	CMenuItem;
+	CMenuItem,
+	CWebUser;
 
 class Module extends CModule {
 
@@ -34,11 +35,13 @@ class Module extends CModule {
 				(new CMenuItem(_('Ticket Platform')))->setAction('ticket.platform')
 			);
 
-		APP::Component()->get('menu.main')
-			->findOrAdd(_('Administration'))
-			->getSubmenu()
-			->insertAfter(_('General'),
-				(new CMenuItem(_('Ticket Platform')))->setAction('ticket.platform.settings')
-			);
+		if (CWebUser::getType() >= USER_TYPE_SUPER_ADMIN) {
+			$administration = APP::Component()->get('menu.main')->find(_('Administration'));
+			if ($administration !== null) {
+				$administration->getSubMenu()->add(
+					(new CMenuItem(_('Ticket Platform')))->setAction('ticket.platform.settings')
+				);
+			}
+		}
 	}
 }
